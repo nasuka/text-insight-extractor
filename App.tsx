@@ -7,6 +7,7 @@ import { ChatInterface } from './components/ChatInterface';
 import { exportAnalyzedDataToCSV, downloadCSV, isAnalyzedCSV, parseAnalyzedCSV, extractTopicsFromAnalyzedData } from './utils/csvUtils';
 import { generateStaticHTML, downloadHTML } from './utils/htmlExportUtils';
 import { saveExportState, ExportState } from './utils/staticExportUtils';
+import { createStaticBuild, downloadBlob } from './utils/staticBuildUtils';
 
 const App: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
@@ -27,6 +28,8 @@ const App: React.FC = () => {
   const [showChat, setShowChat] = useState<boolean>(false);
   const [isResumedAnalysis, setIsResumedAnalysis] = useState<boolean>(false);
   const [sampleSize, setSampleSize] = useState<number>(200);
+  const [isBuilding, setIsBuilding] = useState<boolean>(false);
+  const [buildProgress, setBuildProgress] = useState<string>('');
 
   const resetState = () => {
     setFile(null);
@@ -358,6 +361,44 @@ const App: React.FC = () => {
     alert('静的サイトのエクスポート準備完了！\n\n手順:\n1. 開発サーバーが起動していることを確認\n2. ターミナルで "npm run build:static" を実行\n3. dist-staticフォルダが生成されます\n4. "npm run preview:static" でプレビュー\n5. dist-staticフォルダをWebサーバーにアップロード\n\n現在表示中のフィルタ状態でエクスポートされます。\n\n※ もし前の結果が表示される場合は、開発サーバーを再起動してください。');
   }, [analyzedData, filteredData, extractedTopics, headers, rows, selectedColumn, selectedTopic, selectedSubTopic, selectedKptType, selectedPrefecture]);
 
+  const handleStaticBuild = useCallback(async () => {
+    if (analyzedData.length === 0) return;
+    
+    setIsBuilding(true);
+    setBuildProgress('準備中...');
+    
+    try {
+      const exportState: ExportState = {
+        analyzedData: filteredData,
+        extractedTopics,
+        headers,
+        rows,
+        selectedColumn,
+        timestamp: new Date().toISOString(),
+        filters: {
+          selectedTopic,
+          selectedSubTopic,
+          selectedKptType,
+          selectedPrefecture
+        }
+      };
+      
+      const blob = await createStaticBuild(exportState, (progress) => {
+        setBuildProgress(progress.message);
+      });
+      
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+      downloadBlob(blob, `static_report_${timestamp}.zip`);
+      
+    } catch (error) {
+      console.error('Build failed:', error);
+      alert('静的サイトの生成に失敗しました: ' + (error instanceof Error ? error.message : '不明なエラー'));
+    } finally {
+      setIsBuilding(false);
+      setBuildProgress('');
+    }
+  }, [analyzedData, filteredData, extractedTopics, headers, rows, selectedColumn, selectedTopic, selectedSubTopic, selectedKptType, selectedPrefecture]);
+
   const buttonText = 'トピックを分析';
   const ButtonIcon = ListBulletIcon;
   const showColumnSelector = true;
@@ -605,6 +646,20 @@ const App: React.FC = () => {
                       className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-2 transition-colors"
                     >
                       💬 質問
+                    </button>
+                    <button
+                      onClick={handleStaticBuild}
+                      disabled={isBuilding}
+                      className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed flex items-center gap-2 transition-colors"
+                    >
+                      {isBuilding ? (
+                        <>
+                          <LoadingSpinner className="w-4 h-4" />
+                          {buildProgress || '処理中...'}
+                        </>
+                      ) : (
+                        <>📦 静的サイト生成</>
+                      )}
                     </button>
                   </div>
                 </div>

@@ -11,9 +11,11 @@
     "preview:static": "npx serve dist-static"
   },
   "dependencies": {
+    "@google/genai": "^1.11.0",
+    "@types/jszip": "^3.4.1",
+    "jszip": "^3.10.1",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0",
-    "@google/genai": "^1.11.0"
+    "react-dom": "^19.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
