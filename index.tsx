@@ -4,6 +4,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import StaticApp from './StaticApp';
 import { loadExportState } from './utils/staticExportUtils';
+import './index.css';
 
 // Check if we're in static mode or have exported state
 const isStaticMode = (window as any).__STATIC_MODE__ || false;

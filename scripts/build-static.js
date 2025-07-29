@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-import { readFileSync, writeFileSync, mkdirSync, cpSync, existsSync, rmSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, cpSync, existsSync, rmSync, readdirSync, renameSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { build } from 'vite';
+import { createRequire } from 'module';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const rootDir = resolve(__dirname, '..');
@@ -27,7 +28,13 @@ async function buildStaticSite() {
   const indexPath = resolve(rootDir, 'index.html');
   const originalIndex = readFileSync(indexPath, 'utf-8');
   
-  const modifiedIndex = originalIndex.replace(
+  // Fix paths for static build but keep Tailwind CDN
+  let modifiedIndex = originalIndex
+    .replace('href="/vite.svg"', 'href="#"') // Remove vite.svg reference
+    .replace('href="/index.css"', ''); // Remove index.css reference
+    
+  // Add the initial state
+  modifiedIndex = modifiedIndex.replace(
     '</head>',
     `<script>
       window.__INITIAL_STATE__ = ${JSON.stringify(exportState)};
@@ -66,6 +73,27 @@ async function buildStaticSite() {
       );
       rmSync(resolve(distPath, '.temp-index.html'));
     }
+
+    // Fix asset file names by removing .temp-index prefix
+    const assetsPath = resolve(distPath, 'assets');
+    if (existsSync(assetsPath)) {
+      const files = readdirSync(assetsPath);
+      files.forEach(file => {
+        if (file.startsWith('.temp-index-')) {
+          const newName = file.replace('.temp-index-', 'index-');
+          renameSync(
+            resolve(assetsPath, file),
+            resolve(assetsPath, newName)
+          );
+        }
+      });
+    }
+
+    // Update index.html to use correct asset paths
+    const indexHtmlPath = resolve(distPath, 'index.html');
+    let indexHtml = readFileSync(indexHtmlPath, 'utf-8');
+    indexHtml = indexHtml.replace(/\.temp-index-/g, 'index-');
+    writeFileSync(indexHtmlPath, indexHtml);
 
     console.log('\n✅ Static site built successfully!');
     console.log(`📁 Output directory: ${distPath}`);
