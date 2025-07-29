@@ -1,22 +1,18 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import { extractKeywordsFromText, extractTopicsAndSubtopics, assignTopicsToData } from './services/geminiService';
+import { extractTopicsAndSubtopics, assignTopicsToData } from './services/geminiService';
 import type { TopicWithSubtopics, AnalyzedRow, TextWithId } from './services/geminiService';
 import { UploadIcon, SparklesIcon, ChevronDownIcon, FileIcon, ListBulletIcon, TagIcon } from './components/IconComponents';
 import { LoadingSpinner } from './components/LoadingSpinner';
-
-type AnalysisType = 'keywords' | 'topics';
+import { ChatInterface } from './components/ChatInterface';
+import { exportAnalyzedDataToCSV, downloadCSV, isAnalyzedCSV, parseAnalyzedCSV, extractTopicsFromAnalyzedData } from './utils/csvUtils';
 
 const App: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
   const [headers, setHeaders] = useState<string[]>([]);
   const [rows, setRows] = useState<string[][]>([]);
   const [selectedColumn, setSelectedColumn] = useState<string>('');
-  
-  const [keywords, setKeywords] = useState<string[]>([]);
   const [extractedTopics, setExtractedTopics] = useState<TopicWithSubtopics[]>([]);
   const [analyzedData, setAnalyzedData] = useState<AnalyzedRow[]>([]);
-  
-  const [analysisType, setAnalysisType] = useState<AnalysisType>('keywords');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [analysisStatus, setAnalysisStatus] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
@@ -26,13 +22,14 @@ const App: React.FC = () => {
   const [selectedKptType, setSelectedKptType] = useState<string | null>(null);
   const [preAnalysisKptFilter, setPreAnalysisKptFilter] = useState<string[]>([]);
   const [selectedPrefecture, setSelectedPrefecture] = useState<string | null>(null);
+  const [showChat, setShowChat] = useState<boolean>(false);
+  const [isResumedAnalysis, setIsResumedAnalysis] = useState<boolean>(false);
 
   const resetState = () => {
     setFile(null);
     setHeaders([]);
     setRows([]);
     setSelectedColumn('');
-    setKeywords([]);
     setExtractedTopics([]);
     setAnalyzedData([]);
     setError(null);
@@ -43,6 +40,7 @@ const App: React.FC = () => {
     setSelectedKptType(null);
     setPreAnalysisKptFilter([]);
     setSelectedPrefecture(null);
+    setIsResumedAnalysis(false);
   };
 
   const parseCSVLine = (line: string): string[] => {
@@ -86,10 +84,45 @@ const App: React.FC = () => {
           if (allRows.length > 0) {
             const headerRow = parseCSVLine(allRows[0]);
             const dataRows = allRows.slice(1).map(row => parseCSVLine(row));
-            setHeaders(headerRow);
-            setRows(dataRows);
-            if (headerRow.length > 0) {
-                setSelectedColumn(headerRow[0]);
+            
+            // Check if this is a previously analyzed CSV
+            if (isAnalyzedCSV(headerRow)) {
+              try {
+                const analyzedData = parseAnalyzedCSV(headerRow, dataRows);
+                const topics = extractTopicsFromAnalyzedData(analyzedData);
+                
+                // Reconstruct TopicWithSubtopics format
+                const reconstructedTopics: TopicWithSubtopics[] = topics.map(t => ({
+                  topic: t.topic,
+                  description: t.topic === "その他" 
+                    ? "上記のカテゴリに分類されないその他の内容やトピック。"
+                    : `${t.topic}に関連する内容`,
+                  subTopics: t.subTopics
+                }));
+
+                setAnalyzedData(analyzedData);
+                setExtractedTopics(reconstructedTopics);
+                setIsResumedAnalysis(true);
+                
+                // Also set the original headers (without analysis columns)
+                const originalHeaders = headerRow.filter(h => !h.startsWith('_'));
+                setHeaders(originalHeaders);
+                setRows(dataRows);
+              } catch (error) {
+                console.error('Failed to parse analyzed CSV:', error);
+                // Fall back to normal CSV parsing
+                setHeaders(headerRow);
+                setRows(dataRows);
+                if (headerRow.length > 0) {
+                    setSelectedColumn(headerRow[0]);
+                }
+              }
+            } else {
+              setHeaders(headerRow);
+              setRows(dataRows);
+              if (headerRow.length > 0) {
+                  setSelectedColumn(headerRow[0]);
+              }
             }
           } else {
             setError("CSVファイルが空か、または無効な形式です。");
@@ -112,7 +145,7 @@ const App: React.FC = () => {
       setError("分析するデータがありません。CSVファイルをアップロードしてください。");
       return;
     }
-    if ((analysisType === 'keywords' || analysisType === 'topics') && !selectedColumn) {
+    if (!selectedColumn) {
         setError("分析する列を選択してください。");
         return;
     }
@@ -130,41 +163,30 @@ const App: React.FC = () => {
 
     setIsLoading(true);
     setError(null);
-    setKeywords([]);
     setExtractedTopics([]);
     setAnalyzedData([]);
     setSelectedTopic(null);
     setSelectedSubTopic(null);
 
     try {
-      if (analysisType === 'keywords') {
+      // Topic Analysis
         const columnIndex = headers.findIndex(h => h === selectedColumn);
         if (columnIndex === -1) {
           throw new Error("選択された列が見つかりません。");
         }
-        const columnDataArray = filteredRows.map(row => row[columnIndex]).filter(Boolean);
-        const columnDataString = columnDataArray.join('\n');
-        if (!columnDataString.trim()) {
-          throw new Error("選択された列には分析可能なテキストデータがありません。");
-        }
-        
-        setAnalysisStatus('キーワードを抽出中...');
-        const extractedKeywords = await extractKeywordsFromText(columnDataString);
-        setKeywords(extractedKeywords);
-      } else { // Topic Analysis
-        const columnIndex = headers.findIndex(h => h === selectedColumn);
-        if (columnIndex === -1) {
-          throw new Error("選択された列が見つかりません。");
-        }
-        // ID付きのテキストデータを作成
+        // ID付きのテキストデータを作成（空のデータは除外）
         const textsWithIds: TextWithId[] = [];
+        const rowIndexMap = new Map<string, number>(); // IDと実際の行インデックスのマッピング
+        
         filteredRows.forEach((row, index) => {
           const text = row[columnIndex]?.trim();
           if (text) {
+            const id = `row-${index}`;
             textsWithIds.push({
-              id: `row-${index}`,
+              id: id,
               text: text
             });
+            rowIndexMap.set(id, index);
           }
         });
 
@@ -208,7 +230,6 @@ const App: React.FC = () => {
         } else {
           setError("テキストからトピックを抽出できませんでした。");
         }
-      }
 
     } catch (err) {
       console.error(err);
@@ -218,7 +239,7 @@ const App: React.FC = () => {
       setIsLoading(false);
       setAnalysisStatus('');
     }
-  }, [selectedColumn, rows, headers, analysisType, preAnalysisKptFilter]);
+  }, [selectedColumn, rows, headers, preAnalysisKptFilter]);
 
   const filteredData = useMemo(() => {
     let data = analyzedData;
@@ -280,14 +301,17 @@ const App: React.FC = () => {
     return Array.from(prefectures).sort();
   }, [analyzedData]);
 
-  const analysisOptions: { id: AnalysisType; label: string; icon: React.FC<any> }[] = [
-    { id: 'keywords', label: 'キーワード抽出', icon: SparklesIcon },
-    { id: 'topics', label: 'トピック分析', icon: ListBulletIcon },
-  ];
+  const handleDownloadCSV = useCallback(() => {
+    if (analyzedData.length === 0) return;
+    
+    const csvContent = exportAnalyzedDataToCSV(analyzedData, headers);
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    downloadCSV(csvContent, `analyzed_data_${timestamp}.csv`);
+  }, [analyzedData, headers]);
 
-  const buttonText = analysisType === 'keywords' ? 'キーワードを抽出' : 'トピックを分析';
-  const ButtonIcon = analysisType === 'keywords' ? SparklesIcon : ListBulletIcon;
-  const showColumnSelector = analysisType === 'keywords' || analysisType === 'topics';
+  const buttonText = 'トピックを分析';
+  const ButtonIcon = ListBulletIcon;
+  const showColumnSelector = true;
   
   return (
     <div className="min-h-screen bg-gray-900 text-gray-200 flex flex-col items-center p-4 sm:p-6 lg:p-8">
@@ -295,7 +319,7 @@ const App: React.FC = () => {
         <header className="text-center mb-8">
           <h1 className="text-4xl sm:text-5xl font-bold text-white mb-2 flex items-center justify-center gap-3">
             <SparklesIcon className="w-10 h-10 text-indigo-400" />
-            CSV Insight Extractor
+            KPT結果の分析
           </h1>
           <p className="text-lg text-gray-400">
             CSVをアップロードし、AIでキーワード抽出やトピック分析を行います。
@@ -316,6 +340,7 @@ const App: React.FC = () => {
                   <span className="font-semibold text-indigo-400">クリックしてアップロード</span> またはドラッグ＆ドロップ
                 </p>
                 <p className="text-xs text-gray-500">CSV (UTF-8)</p>
+                <p className="text-xs text-green-400 mt-1">分析済みCSVをアップロードすると分析を再開できます</p>
               </div>
               <input id="file-upload" type="file" className="hidden" accept=".csv" onChange={handleFileChange} />
             </label>
@@ -331,34 +356,12 @@ const App: React.FC = () => {
             <div className="space-y-6">
               <h2 className="text-2xl font-semibold text-white border-l-4 border-indigo-500 pl-4">ステップ2: 分析</h2>
               
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  分析の種類を選択
-                </label>
-                <div className="flex w-full bg-gray-700/50 rounded-lg p-1 border border-gray-600">
-                  {analysisOptions.map((option) => (
-                    <button
-                      key={option.id}
-                      onClick={() => setAnalysisType(option.id)}
-                      className={`w-1/2 flex items-center justify-center gap-2 py-2.5 text-sm font-semibold rounded-md transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-gray-800 ${
-                        analysisType === option.id
-                          ? 'bg-indigo-600 text-white shadow'
-                          : 'text-gray-300 hover:bg-gray-600/50'
-                      }`}
-                      aria-pressed={analysisType === option.id}
-                    >
-                      <option.icon className="w-5 h-5" />
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
 
               {hasKptType && kptTypesWithCount.length > 0 && (
                 <div className="mb-4">
                   <div className="flex items-center justify-between mb-2">
                     <label className="text-sm font-medium text-gray-300">
-                      KPT Typeでフィルタリング（複数選択可）
+                      テーマでフィルタリング（複数選択可）
                     </label>
                     {preAnalysisKptFilter.length > 0 && (
                       <button
@@ -469,21 +472,6 @@ const App: React.FC = () => {
           {error && <div className="p-4 bg-red-900/50 text-red-300 border border-red-700 rounded-lg text-center">{error}</div>}
           
           <div className="space-y-8">
-            {keywords.length > 0 && (
-              <div className="space-y-4">
-                <h2 className="text-2xl font-semibold text-white border-l-4 border-indigo-500 pl-4">抽出されたキーワード</h2>
-                <div className="flex flex-wrap gap-3 p-4 bg-gray-900/50 rounded-lg border border-gray-700">
-                  {keywords.map((keyword, index) => (
-                    <span
-                      key={index}
-                      className="px-4 py-2 bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 text-sm font-medium rounded-full hover:bg-indigo-500/20 transition-colors"
-                    >
-                      {keyword}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
 
             {extractedTopics.length > 0 && (
                <div className="space-y-4">
@@ -534,7 +522,23 @@ const App: React.FC = () => {
 
             {analyzedData.length > 0 && (
               <div className="space-y-4">
-                <h2 className="text-2xl font-semibold text-white border-l-4 border-indigo-500 pl-4">分析結果データ</h2>
+                <div className="flex items-center justify-between">
+                  <h2 className="text-2xl font-semibold text-white border-l-4 border-indigo-500 pl-4">分析結果データ</h2>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleDownloadCSV}
+                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 transition-colors"
+                    >
+                      📥 CSVダウンロード
+                    </button>
+                    <button
+                      onClick={() => setShowChat(true)}
+                      className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-2 transition-colors"
+                    >
+                      💬 データについて質問
+                    </button>
+                  </div>
+                </div>
                 <div className="pl-5 text-sm text-gray-400">
                     {
                         selectedTopic || selectedKptType || selectedPrefecture
@@ -542,6 +546,9 @@ const App: React.FC = () => {
                         : 'すべてのデータ'
                     }
                     <span className="ml-2 font-mono bg-gray-700 text-gray-200 text-xs px-2 py-0.5 rounded">{filteredData.length} / {analyzedData.length} 件</span>
+                    {isResumedAnalysis && (
+                      <span className="ml-2 text-xs text-green-400">（分析済みCSVから復元）</span>
+                    )}
                 </div>
                 
                 <div className="pl-5 mb-4 space-y-3">
@@ -601,14 +608,16 @@ const App: React.FC = () => {
                         <select
                           value={selectedPrefecture || ''}
                           onChange={(e) => setSelectedPrefecture(e.target.value || null)}
-                          className="px-3 py-1 text-xs bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          className="px-3 py-1 text-xs bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 max-w-[200px]"
+                          title={selectedPrefecture || '都道府県を選択'}
                         >
-                          <option value="">都道府県を選択</option>
+                          <option value="">都道府県</option>
                           {availablePrefectures.map(pref => {
                             const count = analyzedData.filter(d => d.prefecture === pref).length;
+                            const displayText = pref.length > 4 ? pref.substring(0, 4) + '...' : pref;
                             return (
-                              <option key={pref} value={pref}>
-                                {pref} ({count}件)
+                              <option key={pref} value={pref} title={`${pref} (${count}件)`}>
+                                {displayText} ({count})
                               </option>
                             );
                           })}
@@ -659,6 +668,13 @@ const App: React.FC = () => {
           </div>
         </main>
       </div>
+      
+      {showChat && (
+        <ChatInterface
+          filteredData={filteredData}
+          onClose={() => setShowChat(false)}
+        />
+      )}
     </div>
   );
 };

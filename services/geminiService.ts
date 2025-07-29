@@ -9,57 +9,6 @@ if (!apiKey) {
 
 const ai = new GoogleGenAI({ apiKey });
 
-/**
- * Extracts keywords from a given block of text using the Gemini API.
- * @param text The text data from which to extract keywords.
- * @returns A promise that resolves to an array of string keywords.
- */
-export const extractKeywordsFromText = async (text: string): Promise<string[]> => {
-  if (!text.trim()) {
-    return [];
-  }
-
-  const prompt = `以下のテキストデータから、内容を特徴づけるキーワードやキーフレーズを15個抽出してください。一般的な助詞や接続詞などのストップワードは除外してください。結果は、キーワードの文字列を含むJSON配列として返してください。
-
-テキストデータ:
----
-${text.slice(0, 15000)}
----
-`;
-
-  try {
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          description: "テキストから抽出された特徴的なキーワードやキーフレーズのリスト。",
-          items: {
-            type: Type.STRING,
-            description: "単一のキーワードまたはキーフレーズ。",
-          },
-        },
-      },
-    });
-
-    const jsonString = response.text.trim();
-    const cleanedJsonString = jsonString.replace(/^```json\n?/, '').replace(/\n?```$/, '');
-    const keywords = JSON.parse(cleanedJsonString);
-
-    if (Array.isArray(keywords) && keywords.every(k => typeof k === 'string')) {
-        return keywords;
-    } else {
-        throw new Error("APIからのレスポンスが期待される形式（文字列の配列）ではありません。");
-    }
-
-  } catch (error) {
-    console.error("Gemini API call failed:", error);
-    throw new Error("Gemini APIとの通信に失敗しました。プロンプトまたはAPIキーを確認してください。");
-  }
-};
-
 export interface TopicWithSubtopics {
   topic: string;
   description: string;
@@ -83,7 +32,7 @@ export const extractTopicsAndSubtopics = async (text: string): Promise<TopicWith
     return [];
   }
 
-  const prompt = `以下のテキストリストを分析し、主要なトピックを5つ抽出してください。各トピックに3〜5個の具体的なサブトピックを関連付けてください。
+  const prompt = `以下のテキストリストを分析し、主要なトピックを4つ抽出してください。各トピックに3〜5個の具体的なサブトピックを関連付けてください。
 各トピックには簡潔なタイトルと1〜2文の説明を生成してください。
 与えられたテキストリストの内容のみを分析対象とし、それ以外の情報は一切推測したり利用したりしないでください。
 結果は、'topic'（トピック名）、'description'（説明）、'subTopics'（サブトピックの文字列配列）のキーを持つオブジェクトのJSON配列として返してください。
@@ -134,6 +83,12 @@ ${text.slice(0, 20000)}
     const topics = JSON.parse(cleanedJsonString);
 
     if (Array.isArray(topics) && topics.every(t => typeof t === 'object' && t.topic && t.description && Array.isArray(t.subTopics))) {
+      // Add "その他" topic explicitly
+      topics.push({
+        topic: "その他",
+        description: "上記のカテゴリに分類されないその他の内容やトピック。",
+        subTopics: ["未分類", "その他全般", "特定不可", "分類困難", "例外的内容"]
+      });
       return topics;
     } else {
       throw new Error("APIからのレスポンスが期待される形式（トピックオブジェクトの配列）ではありません。");
@@ -253,5 +208,72 @@ ${JSON.stringify(chunk)}
   } catch (error) {
     console.error("Global error during parallel topic assignment:", error);
     throw new Error("トピックの並列割り当て処理中に全体的なエラーが発生しました。");
+  }
+};
+
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: Date;
+}
+
+/**
+ * Asks a question about the filtered data using Gemini AI.
+ * @param question The user's question about the data.
+ * @param filteredData The filtered data to analyze.
+ * @param conversationHistory Previous messages for context.
+ * @returns A promise that resolves to the AI's response.
+ */
+export const askQuestionAboutData = async (
+  question: string, 
+  filteredData: AnalyzedRow[], 
+  conversationHistory: ChatMessage[] = []
+): Promise<string> => {
+  if (!question.trim() || filteredData.length === 0) {
+    return "質問またはデータが空です。有効な質問とフィルタされたデータを提供してください。";
+  }
+
+  // Prepare data summary for context
+  const dataSummary = filteredData.slice(0, 100).map(row => ({
+    id: row.id,
+    text: row.originalText.slice(0, 200), // Limit text length
+    topic: row.topic,
+    subTopic: row.subTopic,
+    kptType: row.kptType,
+    prefecture: row.prefecture
+  }));
+
+  // Build conversation context
+  const conversationContext = conversationHistory.slice(-5).map(msg => 
+    `${msg.role === 'user' ? 'ユーザー' : 'アシスタント'}: ${msg.content}`
+  ).join('\n');
+
+  const prompt = `以下のフィルタされたデータについて質問に答えてください。データは最大100件まで含まれています。
+
+${conversationContext ? `会話履歴:\n${conversationContext}\n` : ''}
+
+現在の質問: ${question}
+
+分析対象のデータ（JSON形式）:
+---
+${JSON.stringify(dataSummary, null, 2)}
+---
+
+データの概要:
+- 総件数: ${filteredData.length}件
+- 表示データ: ${Math.min(100, filteredData.length)}件
+
+質問に対して、データの内容に基づいて具体的かつ有用な回答を提供してください。`;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
+    });
+
+    return response.text.trim();
+  } catch (error) {
+    console.error("Gemini API chat call failed:", error);
+    throw new Error("チャット機能でのGemini APIとの通信に失敗しました。");
   }
 };
