@@ -32,8 +32,15 @@ export const saveExportState = (state: ExportState): void => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(stateWithTimestamp)
-    }).catch(() => {
-      // Ignore errors in production
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) {
+        console.log('✅ Export state saved successfully');
+      }
+    })
+    .catch(error => {
+      console.error('❌ Failed to save export state:', error);
     });
   }
 };

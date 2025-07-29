@@ -6,8 +6,8 @@ export function saveStatePlugin(): Plugin {
   return {
     name: 'save-state',
     configureServer(server) {
-      server.middlewares.use('/api/save-export-state', async (req, res, next) => {
-        if (req.method !== 'POST') {
+      server.middlewares.use((req, res, next) => {
+        if (req.url !== '/api/save-export-state' || req.method !== 'POST') {
           return next();
         }
 
@@ -22,9 +22,12 @@ export function saveStatePlugin(): Plugin {
             const filePath = resolve(process.cwd(), '.static-export-state.json');
             writeFileSync(filePath, JSON.stringify(state, null, 2));
             
+            console.log('✅ Export state saved to:', filePath);
+            
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ success: true }));
           } catch (error) {
+            console.error('❌ Failed to save state:', error);
             res.writeHead(500, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: 'Failed to save state' }));
           }

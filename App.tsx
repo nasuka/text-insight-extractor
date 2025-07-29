@@ -26,6 +26,7 @@ const App: React.FC = () => {
   const [selectedPrefecture, setSelectedPrefecture] = useState<string | null>(null);
   const [showChat, setShowChat] = useState<boolean>(false);
   const [isResumedAnalysis, setIsResumedAnalysis] = useState<boolean>(false);
+  const [sampleSize, setSampleSize] = useState<number>(200);
 
   const resetState = () => {
     setFile(null);
@@ -195,9 +196,12 @@ const App: React.FC = () => {
         if (textsWithIds.length === 0) {
             throw new Error("選択された列には分析可能なテキストデータがありません。");
         }
-        const allText = textsWithIds.map(item => item.text).join('\n');
+        
+        // サンプルサイズに基づいてデータを制限
+        const sampledTexts = textsWithIds.slice(0, sampleSize);
+        const allText = sampledTexts.map(item => item.text).join('\n');
 
-        setAnalysisStatus('トピックとサブトピックを抽出中...');
+        setAnalysisStatus(`トピックとサブトピックを抽出中...`);
         const topicsResult = await extractTopicsAndSubtopics(allText);
         setExtractedTopics(topicsResult);
         
@@ -351,7 +355,7 @@ const App: React.FC = () => {
     // Save state for static export
     saveExportState(exportState);
     
-    alert('静的サイトのエクスポート準備完了！\n\n手順:\n1. ターミナルで "npm run build:static" を実行\n2. dist-staticフォルダが生成されます\n3. "npm run preview:static" でプレビュー\n4. dist-staticフォルダをWebサーバーにアップロード\n\n現在表示中のフィルタ状態でエクスポートされます。');
+    alert('静的サイトのエクスポート準備完了！\n\n手順:\n1. 開発サーバーが起動していることを確認\n2. ターミナルで "npm run build:static" を実行\n3. dist-staticフォルダが生成されます\n4. "npm run preview:static" でプレビュー\n5. dist-staticフォルダをWebサーバーにアップロード\n\n現在表示中のフィルタ状態でエクスポートされます。\n\n※ もし前の結果が表示される場合は、開発サーバーを再起動してください。');
   }, [analyzedData, filteredData, extractedTopics, headers, rows, selectedColumn, selectedTopic, selectedSubTopic, selectedKptType, selectedPrefecture]);
 
   const buttonText = 'トピックを分析';
@@ -469,8 +473,9 @@ const App: React.FC = () => {
                 </div>
               )}
               
-              <div className={`grid ${showColumnSelector ? 'sm:grid-cols-2' : 'sm:grid-cols-1'} gap-4 items-end`}>
+              <div className="space-y-4">
                 {showColumnSelector && (
+                  <div className="grid sm:grid-cols-2 gap-4">
                     <div>
                       <label htmlFor="column-select" className="block text-sm font-medium text-gray-300 mb-1">
                         分析する列を選択
@@ -491,12 +496,31 @@ const App: React.FC = () => {
                         <ChevronDownIcon className="w-5 h-5 absolute top-1/2 right-3 -translate-y-1/2 text-gray-400 pointer-events-none"/>
                       </div>
                     </div>
+                    
+                    <div>
+                      <label htmlFor="sample-size" className="block text-sm font-medium text-gray-300 mb-1">
+                        トピック抽出に使用するサンプル数
+                      </label>
+                      <input
+                        id="sample-size"
+                        type="number"
+                        min="10"
+                        max="1000"
+                        value={sampleSize}
+                        onChange={(e) => setSampleSize(Math.max(10, Math.min(1000, parseInt(e.target.value) || 200)))}
+                        className="w-full px-3 py-2.5 text-base bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-white"
+                      />
+                      <p className="text-xs text-gray-400 mt-1">
+                        トピック抽出時に使用するデータ数（10〜1000件）
+                      </p>
+                    </div>
+                  </div>
                 )}
 
                 <button
                   onClick={handleAnalyzeClick}
                   disabled={isLoading}
-                  className={`w-full flex items-center justify-center px-4 py-2.5 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 focus:ring-offset-gray-900 disabled:bg-indigo-900/50 disabled:cursor-not-allowed transition-all duration-200`}
+                  className="w-full flex items-center justify-center px-4 py-2.5 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 focus:ring-offset-gray-900 disabled:bg-indigo-900/50 disabled:cursor-not-allowed transition-all duration-200"
                 >
                   {isLoading ? (
                     <>
