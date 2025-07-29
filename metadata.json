@@ -1,0 +1,5 @@
+{
+  "name": "CSV Insight Extractor",
+  "description": "Upload a CSV file, select a column, and use the Gemini API to extract keywords or topics from the text in that column.",
+  "requestFramePermissions": []
+}
