@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "build:static": "node scripts/build-static.js",
+    "preview": "vite preview",
+    "preview:static": "npx serve dist-static"
   },
   "dependencies": {
     "react": "^19.1.0",

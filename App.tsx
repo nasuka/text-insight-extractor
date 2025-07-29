@@ -5,6 +5,8 @@ import { UploadIcon, SparklesIcon, ChevronDownIcon, FileIcon, ListBulletIcon, Ta
 import { LoadingSpinner } from './components/LoadingSpinner';
 import { ChatInterface } from './components/ChatInterface';
 import { exportAnalyzedDataToCSV, downloadCSV, isAnalyzedCSV, parseAnalyzedCSV, extractTopicsFromAnalyzedData } from './utils/csvUtils';
+import { generateStaticHTML, downloadHTML } from './utils/htmlExportUtils';
+import { saveExportState, ExportState } from './utils/staticExportUtils';
 
 const App: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
@@ -309,6 +311,49 @@ const App: React.FC = () => {
     downloadCSV(csvContent, `analyzed_data_${timestamp}.csv`);
   }, [analyzedData, headers]);
 
+  const handleExportHTML = useCallback(() => {
+    if (analyzedData.length === 0) return;
+    
+    const htmlContent = generateStaticHTML({
+      title: 'KPT分析結果レポート',
+      analyzedData: filteredData,
+      topics: extractedTopics,
+      selectedTopic,
+      selectedSubTopic,
+      selectedKptType,
+      selectedPrefecture,
+      totalCount: analyzedData.length,
+      filteredCount: filteredData.length
+    });
+    
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    downloadHTML(htmlContent, `analysis_report_${timestamp}.html`);
+  }, [analyzedData, filteredData, extractedTopics, selectedTopic, selectedSubTopic, selectedKptType, selectedPrefecture]);
+
+  const handleStaticExport = useCallback(() => {
+    if (analyzedData.length === 0) return;
+    
+    const exportState: ExportState = {
+      analyzedData: filteredData,
+      extractedTopics,
+      headers,
+      rows,
+      selectedColumn,
+      timestamp: new Date().toISOString(),
+      filters: {
+        selectedTopic,
+        selectedSubTopic,
+        selectedKptType,
+        selectedPrefecture
+      }
+    };
+    
+    // Save state for static export
+    saveExportState(exportState);
+    
+    alert('静的サイトのエクスポート準備完了！\n\n手順:\n1. ターミナルで "npm run build:static" を実行\n2. dist-staticフォルダが生成されます\n3. "npm run preview:static" でプレビュー\n4. dist-staticフォルダをWebサーバーにアップロード\n\n現在表示中のフィルタ状態でエクスポートされます。');
+  }, [analyzedData, filteredData, extractedTopics, headers, rows, selectedColumn, selectedTopic, selectedSubTopic, selectedKptType, selectedPrefecture]);
+
   const buttonText = 'トピックを分析';
   const ButtonIcon = ListBulletIcon;
   const showColumnSelector = true;
@@ -322,7 +367,7 @@ const App: React.FC = () => {
             KPT結果の分析
           </h1>
           <p className="text-lg text-gray-400">
-            CSVをアップロードし、AIでキーワード抽出やトピック分析を行います。
+            CSVをアップロードし、AIでトピック分析を行います。
           </p>
         </header>
 
@@ -529,13 +574,13 @@ const App: React.FC = () => {
                       onClick={handleDownloadCSV}
                       className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 transition-colors"
                     >
-                      📥 CSVダウンロード
+                      📥 分析結果ファイル（CSV）出力
                     </button>
                     <button
                       onClick={() => setShowChat(true)}
                       className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-2 transition-colors"
                     >
-                      💬 データについて質問
+                      💬 質問
                     </button>
                   </div>
                 </div>
