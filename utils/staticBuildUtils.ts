@@ -16,9 +16,8 @@ export async function createStaticBuild(
   // First, save the export state for the build process
   saveExportState(exportState);
   
-  // Use debug version for now to troubleshoot
-  // return createZipFromBuild(exportState, onProgress);
-  return createDebugZip(exportState, onProgress);
+  // Use the production build approach
+  return createZipFromBuild(exportState, onProgress);
 }
 
 export function downloadBlob(blob: Blob, filename: string) {

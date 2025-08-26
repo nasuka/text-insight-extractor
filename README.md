@@ -27,7 +27,7 @@ CSV Insight ExtractorはGoogle Gemini AIを使用してCSVデータのトピッ�
 1. リポジトリをクローン
 ```bash
 git clone [repository-url]
-cd text-insight-extractor
+cd text-insight-extracto
 ```
 
 2. 依存関係をインストール
