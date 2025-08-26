@@ -588,44 +588,59 @@ const App: React.FC = () => {
                  <h2 className="text-2xl font-semibold text-white border-l-4 border-indigo-500 pl-4">抽出されたトピック</h2>
                  <p className="text-gray-400 pl-5">トピックをクリックして関連データを表示・フィルタリングします。</p>
                  <div className="space-y-3">
-                   {extractedTopics.map((item) => (
-                     <div key={item.topic} className="bg-gray-900/50 rounded-lg border border-gray-700 overflow-hidden transition-all duration-300">
-                       <button
-                         onClick={() => {
-                           setSelectedTopic(prev => (prev === item.topic ? null : item.topic));
-                           setSelectedSubTopic(null); // Reset sub-topic when topic accordion is toggled
-                         }}
-                         className="w-full flex justify-between items-center p-4 text-left hover:bg-gray-700/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
-                         aria-expanded={selectedTopic === item.topic}
-                       >
-                         <h3 className="text-lg font-semibold text-indigo-400 flex items-center gap-2">
-                           <ListBulletIcon className="w-5 h-5"/> {item.topic}
-                         </h3>
-                         <ChevronDownIcon className={`w-6 h-6 text-gray-400 transition-transform duration-300 ${selectedTopic === item.topic ? 'rotate-188' : ''}`} />
-                       </button>
-                       {selectedTopic === item.topic && (
-                         <div className="p-4 border-t border-gray-700 bg-black/10">
-                           <p className="text-gray-300 mb-4 pl-1">{item.description}</p>
-                           <div className="flex flex-wrap gap-2">
-                             {item.subTopics.map((subTopic) => (
-                               <button
-                                 key={subTopic}
-                                 onClick={() => setSelectedSubTopic(prev => (prev === subTopic ? null : subTopic))}
-                                 className={`flex items-center gap-1.5 px-3 py-1 text-sm font-medium rounded-full transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-800 ${
-                                   selectedSubTopic === subTopic
-                                     ? 'bg-teal-400 text-gray-900 ring-2 ring-teal-300'
-                                     : 'bg-teal-500/10 border border-teal-500/30 text-teal-300 hover:bg-teal-500/20'
-                                 }`}
-                               >
-                                 <TagIcon className="w-4 h-4" />
-                                 {subTopic}
-                               </button>
-                             ))}
+                   {extractedTopics.map((item) => {
+                     // Calculate count for this topic
+                     const topicCount = analyzedData.filter(d => d.topic === item.topic).length;
+                     
+                     return (
+                       <div key={item.topic} className="bg-gray-900/50 rounded-lg border border-gray-700 overflow-hidden transition-all duration-300">
+                         <button
+                           onClick={() => {
+                             setSelectedTopic(prev => (prev === item.topic ? null : item.topic));
+                             setSelectedSubTopic(null); // Reset sub-topic when topic accordion is toggled
+                           }}
+                           className="w-full flex justify-between items-center p-4 text-left hover:bg-gray-700/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                           aria-expanded={selectedTopic === item.topic}
+                         >
+                           <h3 className="text-lg font-semibold text-indigo-400 flex items-center gap-2">
+                             <ListBulletIcon className="w-5 h-5"/> 
+                             {item.topic}
+                             <span className="text-sm font-normal text-gray-400">({topicCount})</span>
+                           </h3>
+                           <ChevronDownIcon className={`w-6 h-6 text-gray-400 transition-transform duration-300 ${selectedTopic === item.topic ? 'rotate-188' : ''}`} />
+                         </button>
+                         {selectedTopic === item.topic && (
+                           <div className="p-4 border-t border-gray-700 bg-black/10">
+                             <p className="text-gray-300 mb-4 pl-1">{item.description}</p>
+                             <div className="flex flex-wrap gap-2">
+                               {item.subTopics.map((subTopic) => {
+                                 // Calculate count for this subtopic within the current topic
+                                 const subTopicCount = analyzedData.filter(d => 
+                                   d.topic === item.topic && d.subTopic === subTopic
+                                 ).length;
+                                 
+                                 return (
+                                   <button
+                                     key={subTopic}
+                                     onClick={() => setSelectedSubTopic(prev => (prev === subTopic ? null : subTopic))}
+                                     className={`flex items-center gap-1.5 px-3 py-1 text-sm font-medium rounded-full transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-800 ${
+                                       selectedSubTopic === subTopic
+                                         ? 'bg-teal-400 text-gray-900 ring-2 ring-teal-300'
+                                         : 'bg-teal-500/10 border border-teal-500/30 text-teal-300 hover:bg-teal-500/20'
+                                     }`}
+                                   >
+                                     <TagIcon className="w-4 h-4" />
+                                     {subTopic}
+                                     <span className="text-xs">({subTopicCount})</span>
+                                   </button>
+                                 );
+                               })}
+                             </div>
                            </div>
-                         </div>
-                       )}
-                     </div>
-                   ))}
+                         )}
+                       </div>
+                     );
+                   })}
                  </div>
                </div>
              )}
